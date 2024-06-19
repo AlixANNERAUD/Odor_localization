@@ -1,7 +1,7 @@
 import paho.mqtt.client as mqtt
 import time
 
-MQTT_BROKER = "broker.hivemq.com" 
+MQTT_BROKER = "alixloicrpi.local"
 MQTT_PORT = 1883
 MQTT_TOPIC = "your/topic"
 
