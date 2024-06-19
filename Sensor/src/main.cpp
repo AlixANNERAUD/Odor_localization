@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "WiFi.h"
 #include "PubSubClient.h"
+#include "MQSensor.hpp"
 
 void setup_wifi(const char *wifi_ssid, const char *wifi_password)
 {
@@ -26,7 +27,7 @@ void setup_wifi(const char *wifi_ssid, const char *wifi_password)
 void setup_mqtt_client(PubSubClient &client, const char *mqtt_broker, uint16_t mqtt_port)
 {
   client.setServer(mqtt_broker, mqtt_port);
-  
+
   String clientId = "ESP32Client-";
 
   while (!client.connected())
@@ -34,7 +35,7 @@ void setup_mqtt_client(PubSubClient &client, const char *mqtt_broker, uint16_t m
     Serial.print("Attempting MQTT connection...");
 
     clientId += String(random(0xffff), HEX);
-    
+
     if (client.connect(clientId.c_str()))
     {
       Serial.println("connected");
@@ -47,14 +48,21 @@ void setup_mqtt_client(PubSubClient &client, const char *mqtt_broker, uint16_t m
   }
 }
 
-bool publish_sensor_data(PubSubClient &client, unsigned int value)
-{
-  char payload[10];
-  sprintf(payload, "%d", value);
-  return client.publish(DEFAULT_MQTT_TOPIC, payload);
-}
+CalibrationCurveClass LPG(2.3, 0.21, -0.47);
+CalibrationCurveClass CO(2.3, 0.72, -0.34);
+CalibrationCurveClass Smoke(2.3, 0.53, -0.44);
 
+bool publish_sensor_data(PubSubClient &client, MQSensorClass &sensor, const char *topic)
+{
+  float sensorValue = sensor.getGasPercentage(LPG);
+
+  char payload[10];
+  sprintf(payload, "%.2f", sensorValue);
+  return client.publish(topic, payload);
+}
 PubSubClient client;
+
+MQSensorClass sensor(DEFAULT_SENSOR_PIN, 5.0, 9.83);
 
 void setup()
 {
@@ -67,15 +75,15 @@ void setup()
   // - MQTT
   setup_mqtt_client(client, DEFAULT_MQTT_BROKER, DEFAULT_MQTT_PORT);
 
-  // - Analog
-  pinMode(DEFAULT_SENSOR_PIN, INPUT);
+  // - Sensor
+  sensor.initialize();
 }
 
 void loop()
 {
   int sensorValue = analogRead(DEFAULT_SENSOR_PIN);
 
-  if (publish_sensor_data(client, sensorValue))
+  if (publish_sensor_data(client, sensor, DEFAULT_MQTT_TOPIC))
   {
     Serial.printf("Published sensor data: %d\n", sensorValue);
   }
@@ -83,7 +91,6 @@ void loop()
   {
     Serial.println("Failed to publish sensor data");
   }
-  
 
   delay(100);
 }
