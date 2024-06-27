@@ -47,6 +47,19 @@ void reconnect_mqtt_client(PubSubClient &client, const char *mqtt_broker, const 
   }
 }
 
+bool get_unix_timestamp(unsigned long &timestamp)
+{
+  time_t now;
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo))
+  {
+    return false;
+  }
+  time(&now);
+  timestamp = now;
+  return true;
+}
+
 CalibrationCurveClass LPG(2.3, 0.21, -0.47);
 CalibrationCurveClass CO(2.3, 0.72, -0.34);
 CalibrationCurveClass Smoke(2.3, 0.53, -0.44);
@@ -57,6 +70,19 @@ bool publish_sensor_data(PubSubClient &client, MQSensorClass &sensor, JsonDocume
 
   document["data"] = sensorValue;
 
+  // - Timestamp
+
+  unsigned long timestamp;
+
+  if (!get_unix_timestamp(timestamp))
+  {
+    ESP_LOGE("MQTT", "Failed to get timestamp");
+    return false;
+  }
+
+  document["timestamp"] = timestamp;
+
+  // - Serialize JSON
   document.shrinkToFit();
 
   serializeJson(document, buffer);
@@ -68,7 +94,8 @@ bool publish_sensor_data(PubSubClient &client, MQSensorClass &sensor, JsonDocume
 void setup()
 {
   // - WiFi
-  setup_wifi(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASSWORD);
+  // - Time (NTP)
+  configTime(0, 0, "pool.ntp.org");
 
   // - Sensor
   sensor.initialize();
