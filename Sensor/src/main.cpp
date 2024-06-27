@@ -63,7 +63,7 @@ CalibrationCurveClass LPG(2.3, 0.21, -0.47);
 CalibrationCurveClass CO(2.3, 0.72, -0.34);
 CalibrationCurveClass Smoke(2.3, 0.53, -0.44);
 
-bool publish_sensor_data(PubSubClient &client, MQSensorClass &sensor, JsonDocument &document, String &buffer, char *topic, const char *client_name)
+bool publish_sensor_data(PubSubClient &client, MQSensorClass &sensor, JsonDocument &document, String &buffer, const char *topic, const char *client_name)
 {
   float sensorValue = sensor.getGasPercentage(LPG);
 
@@ -89,6 +89,8 @@ bool publish_sensor_data(PubSubClient &client, MQSensorClass &sensor, JsonDocume
   ESP_LOGI("MQTT", "Publishing sensor data: %s\n", buffer.c_str());
   return client.publish(topic, buffer.c_str());
 }
+
+MQSensorClass sensor(DEFAULT_SENSOR_PIN, 5.0, 9.83);
 
 void setup()
 {
