@@ -55,16 +55,15 @@ bool get_unix_timestamp(uint64_t &timestamp)
   return true;
 }
 
-CalibrationCurveClass LPG(2.3, 0.21, -0.47);
-CalibrationCurveClass CO(2.3, 0.72, -0.34);
-CalibrationCurveClass Smoke(2.3, 0.53, -0.44);
-CalibrationCurveClass Alcohol(2.3, 0.21, -0.47);
+const CalibrationCurveClass LPG(2.3, 0.21, -0.47);
+const CalibrationCurveClass CO(2.3, 0.72, -0.34);
+const CalibrationCurveClass Smoke(2.3, 0.53, -0.44);
 
 bool publish_sensor_data(PubSubClient &client, MQSensorClass &mq3, MQSensorClass &mq136, JsonDocument &document, String &buffer, const char *topic, const char *client_name)
 {
   // - Sensor acquisition
-  document["data"]["MQ136"] = mq136.rawValue();
-  document["data"]["MQ3"] = mq3.rawValue();
+  document["data"]["MQ136"] = mq136.getGasPercentage(LPG);
+  document["data"]["MQ3"] = mq3.getGasPercentage(LPG);
 
   // - Timestamp
 
@@ -141,11 +140,11 @@ void loop()
 
   lcd.setCursor(0,2);
   lcd.print("MQ136 ");
-  lcd.print(mq136.rawValue());
+  lcd.print(mq136.getGasPercentage(LPG));
 
   lcd.setCursor(0,3);
   lcd.print("MQ3 ");
-  lcd.print(mq3.rawValue());
+  lcd.print(mq3.getGasPercentage(LPG));
   
 
   if (publish_sensor_data(client, mq3, mq136, document, buffer, DEFAULT_MQTT_TOPIC, DEFAULT_CLIENT_NAME))
