@@ -10,39 +10,37 @@ void setup_wifi(const char *wifi_ssid, const char *wifi_password)
 
   delay(1000);
 
-  Serial.printf("Connecting to %s ", wifi_ssid);
-  Serial.flush();
+  ESP_LOGI("WiFi", "Connecting to %s ", wifi_ssid);
 
   WiFi.begin(wifi_ssid, wifi_password);
 
   while (WiFi.status() != WL_CONNECTED)
   {
-    delay(500);
-    Serial.print(".");
-    Serial.flush();
+    if (WiFi.status() == WL_CONNECT_FAILED)
+    {
+      ESP_LOGI("WiFi", "Connection failed !");
+    }
+    delay(1000);
+    ESP_LOGI("WiFi", "Connecting ...");
   }
-  Serial.printf("WiFi connected with IP: %s\n", WiFi.localIP().toString().c_str());
+  ESP_LOGI("WiFi", "WiFi connected with IP: %s\n", WiFi.localIP().toString().c_str());
 }
 
 void setup_mqtt_client(PubSubClient &client, const char *mqtt_broker, uint16_t mqtt_port)
 {
   client.setServer(mqtt_broker, mqtt_port);
 
-  String clientId = "ESP32Client-";
+  ESP_LOGI("MQTT", "Attempting connection to %s:%d", mqtt_broker, mqtt_port);
 
   while (!client.connected())
   {
-    Serial.print("Attempting MQTT connection...");
-
-    clientId += String(random(0xffff), HEX);
-
-    if (client.connect(clientId.c_str()))
+    if (client.connect(client_name))
     {
-      Serial.println("connected");
+      ESP_LOGI("MQTT", "connected !");
     }
     else
     {
-      Serial.printf("failed, rc=%d, try again in 5 seconds\n", client.state());
+      ESP_LOGE("MQTT", "Connection failed, rc=%d, try again in 5 seconds\n", client.state());
       delay(5000);
     }
   }
@@ -66,9 +64,6 @@ MQSensorClass sensor(DEFAULT_SENSOR_PIN, 5.0, 9.83);
 
 void setup()
 {
-  // - Serial
-  Serial.begin(115200);
-
   // - WiFi
   setup_wifi(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASSWORD);
 
@@ -85,11 +80,13 @@ void loop()
 
   if (publish_sensor_data(client, sensor, DEFAULT_MQTT_TOPIC))
   {
-    Serial.printf("Published sensor data: %d\n", sensorValue);
+    ESP_LOGI("MQTT",
+             "Published sensor data: %d\n",
+             sensorValue);
   }
   else
   {
-    Serial.println("Failed to publish sensor data");
+    ESP_LOGI("MQTT", "Failed to publish sensor data");
   }
 
   delay(100);
