@@ -118,22 +118,16 @@ void loop()
   document["sensor"] = DEFAULT_CLIENT_NAME;
 
   if (!client.connected())
-  {
     reconnect_mqtt_client(client, DEFAULT_MQTT_BROKER, DEFAULT_CLIENT_NAME, DEFAULT_MQTT_PORT);
-  }
 
   int sensorValue = analogRead(DEFAULT_SENSOR_PIN);
 
   if (publish_sensor_data(client, sensor, document, buffer, DEFAULT_MQTT_TOPIC, DEFAULT_CLIENT_NAME))
-  {
-    ESP_LOGI("MQTT",
+    ESP_LOGV("MQTT",
              "Published sensor data: %d\n",
              sensorValue);
-  }
   else
-  {
     ESP_LOGI("MQTT", "Failed to publish sensor data");
-  }
 
   delay(100);
 }
