@@ -108,7 +108,6 @@ void setup()
   sensor.initialize();
 }
 
-MQSensorClass sensor(DEFAULT_SENSOR_PIN, 5.0, 9.83);
 WiFiClient wifi_client;
 PubSubClient client(wifi_client);
 JsonDocument document;
