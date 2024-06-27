@@ -58,7 +58,6 @@ bool publish_sensor_data(PubSubClient &client, MQSensorClass &sensor, const char
   sprintf(payload, "%.2f", sensorValue);
   return client.publish(topic, payload);
 }
-PubSubClient client;
 
 MQSensorClass sensor(DEFAULT_SENSOR_PIN, 5.0, 9.83);
 
@@ -67,12 +66,12 @@ void setup()
   // - WiFi
   setup_wifi(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASSWORD);
 
-  // - MQTT
-  setup_mqtt_client(client, DEFAULT_MQTT_BROKER, DEFAULT_MQTT_PORT);
-
   // - Sensor
   sensor.initialize();
 }
+
+WiFiClient wifi_client;
+PubSubClient client(wifi_client);
 
 void loop()
 {
