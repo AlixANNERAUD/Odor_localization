@@ -65,6 +65,7 @@ CalibrationCurveClass Smoke(2.3, 0.53, -0.44);
 
 bool publish_sensor_data(PubSubClient &client, MQSensorClass &sensor, JsonDocument &document, String &buffer, const char *topic, const char *client_name)
 {
+  // - Sensor acquisition
   float sensorValue = sensor.getGasPercentage(LPG);
 
   document["data"] = sensorValue;
@@ -86,7 +87,7 @@ bool publish_sensor_data(PubSubClient &client, MQSensorClass &sensor, JsonDocume
 
   serializeJson(document, buffer);
 
-  ESP_LOGI("MQTT", "Publishing sensor data: %s\n", buffer.c_str());
+  // - Publish
   return client.publish(topic, buffer.c_str());
 }
 
