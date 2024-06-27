@@ -1,7 +1,8 @@
 #include <Arduino.h>
-#include "WiFi.h"
-#include "PubSubClient.h"
+#include <WiFi.h>
+#include <PubSubClient.h>
 #include "MQSensor.hpp"
+#include <ArduinoJson.h>
 
 void setup_wifi(const char *wifi_ssid, const char *wifi_password)
 {
@@ -50,16 +51,19 @@ CalibrationCurveClass LPG(2.3, 0.21, -0.47);
 CalibrationCurveClass CO(2.3, 0.72, -0.34);
 CalibrationCurveClass Smoke(2.3, 0.53, -0.44);
 
-bool publish_sensor_data(PubSubClient &client, MQSensorClass &sensor, const char *topic)
+bool publish_sensor_data(PubSubClient &client, MQSensorClass &sensor, JsonDocument &document, String &buffer, char *topic, const char *client_name)
 {
   float sensorValue = sensor.getGasPercentage(LPG);
 
-  char payload[10];
-  sprintf(payload, "%.2f", sensorValue);
-  return client.publish(topic, payload);
-}
+  document["data"] = sensorValue;
 
-MQSensorClass sensor(DEFAULT_SENSOR_PIN, 5.0, 9.83);
+  document.shrinkToFit();
+
+  serializeJson(document, buffer);
+
+  ESP_LOGI("MQTT", "Publishing sensor data: %s\n", buffer.c_str());
+  return client.publish(topic, buffer.c_str());
+}
 
 void setup()
 {
@@ -70,11 +74,16 @@ void setup()
   sensor.initialize();
 }
 
+MQSensorClass sensor(DEFAULT_SENSOR_PIN, 5.0, 9.83);
 WiFiClient wifi_client;
 PubSubClient client(wifi_client);
+JsonDocument document;
+String buffer;
 
 void loop()
 {
+  document["sensor"] = DEFAULT_CLIENT_NAME;
+
   if (!client.connected())
   {
     reconnect_mqtt_client(client, DEFAULT_MQTT_BROKER, DEFAULT_CLIENT_NAME, DEFAULT_MQTT_PORT);
@@ -82,7 +91,7 @@ void loop()
 
   int sensorValue = analogRead(DEFAULT_SENSOR_PIN);
 
-  if (publish_sensor_data(client, sensor, DEFAULT_MQTT_TOPIC))
+  if (publish_sensor_data(client, sensor, document, buffer, DEFAULT_MQTT_TOPIC, DEFAULT_CLIENT_NAME))
   {
     ESP_LOGI("MQTT",
              "Published sensor data: %d\n",
