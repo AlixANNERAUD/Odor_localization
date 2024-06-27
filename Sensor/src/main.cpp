@@ -26,7 +26,7 @@ void setup_wifi(const char *wifi_ssid, const char *wifi_password)
   ESP_LOGI("WiFi", "WiFi connected with IP: %s\n", WiFi.localIP().toString().c_str());
 }
 
-void setup_mqtt_client(PubSubClient &client, const char *mqtt_broker, uint16_t mqtt_port)
+void reconnect_mqtt_client(PubSubClient &client, const char *mqtt_broker, const char *client_name, uint16_t mqtt_port)
 {
   client.setServer(mqtt_broker, mqtt_port);
 
@@ -76,6 +76,11 @@ void setup()
 
 void loop()
 {
+  if (!client.connected())
+  {
+    reconnect_mqtt_client(client, DEFAULT_MQTT_BROKER, DEFAULT_CLIENT_NAME, DEFAULT_MQTT_PORT);
+  }
+
   int sensorValue = analogRead(DEFAULT_SENSOR_PIN);
 
   if (publish_sensor_data(client, sensor, DEFAULT_MQTT_TOPIC))
