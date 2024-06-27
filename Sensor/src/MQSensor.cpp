@@ -62,6 +62,11 @@ float MQSensorClass::read(unsigned int samples_count, unsigned int sample_interv
     return samples / samples_count;
 }
 
+unsigned int MQSensorClass::rawValue()
+{
+    return analogRead(pin);
+}
+
 float MQSensorClass::getGasPercentage(const CalibrationCurveClass &calibration_curve)
 {
     float rs_ro_ratio = read(READ_SAMPLE_TIMES, READ_SAMPLE_INTERVAL) / this->Ro;

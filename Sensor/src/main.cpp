@@ -1,16 +1,13 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
-#include "MQSensor.hpp"
 #include <ArduinoJson.h>
+#include <LiquidCrystal_I2C.h>
+#include <Wire.h>
+#include "MQSensor.hpp"
 
 bool setup_wifi(const char *wifi_ssid, const char *wifi_password)
 {
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect();
-
-  delay(1000);
-
   ESP_LOGI("WiFi", "Connecting to %s ...", wifi_ssid);
 
   WiFi.begin(wifi_ssid, wifi_password);
@@ -61,13 +58,13 @@ bool get_unix_timestamp(uint64_t &timestamp)
 CalibrationCurveClass LPG(2.3, 0.21, -0.47);
 CalibrationCurveClass CO(2.3, 0.72, -0.34);
 CalibrationCurveClass Smoke(2.3, 0.53, -0.44);
+CalibrationCurveClass Alcohol(2.3, 0.21, -0.47);
 
-bool publish_sensor_data(PubSubClient &client, MQSensorClass &sensor, JsonDocument &document, String &buffer, const char *topic, const char *client_name)
+bool publish_sensor_data(PubSubClient &client, MQSensorClass &mq3, MQSensorClass &mq136, JsonDocument &document, String &buffer, const char *topic, const char *client_name)
 {
   // - Sensor acquisition
-  float sensorValue = sensor.getGasPercentage(LPG);
-
-  document["data"] = sensorValue;
+  document["data"]["MQ136"] = mq136.rawValue();
+  document["data"]["MQ3"] = mq3.rawValue();
 
   // - Timestamp
 
@@ -90,7 +87,20 @@ bool publish_sensor_data(PubSubClient &client, MQSensorClass &sensor, JsonDocume
   return client.publish(topic, buffer.c_str());
 }
 
-MQSensorClass sensor(DEFAULT_SENSOR_PIN, 5.0, 9.83);
+bool setup_lcd(LiquidCrystal_I2C &lcd, unsigned int sda_pin, unsigned int scl_pin)
+{
+  if (!Wire.begin(sda_pin, scl_pin))
+    return false;
+
+  lcd.init();
+  lcd.backlight();
+
+  return true;
+}
+
+MQSensorClass mq136(DEFAULT_MQ135_PIN, 5.0, 9.83);
+MQSensorClass mq3(DEFAULT_MQ3_PIN, 5.0, 9.83);
+LiquidCrystal_I2C lcd(DEFAULT_LCD_ADDRESS, 20, 4);
 
 void setup()
 {
@@ -104,14 +114,19 @@ void setup()
   // - Time (NTP)
   configTime(0, 0, "pool.ntp.org");
 
+  // - Liquid crystal display
+  setup_lcd(lcd, DEFAULT_LCD_SDA_PIN, DEFAULT_LCD_SCL_PIN);
+
   // - Sensor
-  sensor.initialize();
+  mq3.initialize();
+  mq136.initialize();
 }
 
 WiFiClient wifi_client;
 PubSubClient client(wifi_client);
 JsonDocument document;
 String buffer;
+
 
 void loop()
 {
@@ -120,9 +135,20 @@ void loop()
   if (!client.connected())
     reconnect_mqtt_client(client, DEFAULT_MQTT_BROKER, DEFAULT_CLIENT_NAME, DEFAULT_MQTT_PORT);
 
-  int sensorValue = analogRead(DEFAULT_SENSOR_PIN);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Sniffer project");
 
-  if (publish_sensor_data(client, sensor, document, buffer, DEFAULT_MQTT_TOPIC, DEFAULT_CLIENT_NAME))
+  lcd.setCursor(0,2);
+  lcd.print("MQ136 ");
+  lcd.print(mq136.rawValue());
+
+  lcd.setCursor(0,3);
+  lcd.print("MQ3 ");
+  lcd.print(mq3.rawValue());
+  
+
+  if (publish_sensor_data(client, mq3, mq136, document, buffer, DEFAULT_MQTT_TOPIC, DEFAULT_CLIENT_NAME))
     ESP_LOGV("MQTT",
              "Published sensor data: %d\n",
              sensorValue);
