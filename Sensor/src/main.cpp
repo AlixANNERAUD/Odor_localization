@@ -46,16 +46,15 @@ void reconnect_mqtt_client(PubSubClient &client, const char *mqtt_broker, const 
   }
 }
 
-bool get_unix_timestamp(unsigned long &timestamp)
+bool get_unix_timestamp(uint64_t &timestamp)
 {
-  time_t now;
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo))
-  {
     return false;
-  }
-  time(&now);
-  timestamp = now;
+
+  struct timeval now;
+  gettimeofday(&now, NULL);
+  timestamp = (now.tv_sec * 1000) + now.tv_usec / 1000;
   return true;
 }
 
@@ -72,7 +71,7 @@ bool publish_sensor_data(PubSubClient &client, MQSensorClass &sensor, JsonDocume
 
   // - Timestamp
 
-  unsigned long timestamp;
+  uint64_t timestamp;
 
   if (!get_unix_timestamp(timestamp))
   {
