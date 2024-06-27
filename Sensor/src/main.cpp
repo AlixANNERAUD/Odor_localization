@@ -4,27 +4,26 @@
 #include "MQSensor.hpp"
 #include <ArduinoJson.h>
 
-void setup_wifi(const char *wifi_ssid, const char *wifi_password)
+bool setup_wifi(const char *wifi_ssid, const char *wifi_password)
 {
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
 
   delay(1000);
 
-  ESP_LOGI("WiFi", "Connecting to %s ", wifi_ssid);
+  ESP_LOGI("WiFi", "Connecting to %s ...", wifi_ssid);
 
   WiFi.begin(wifi_ssid, wifi_password);
 
   while (WiFi.status() != WL_CONNECTED)
   {
     if (WiFi.status() == WL_CONNECT_FAILED)
-    {
-      ESP_LOGI("WiFi", "Connection failed !");
-    }
+      return false;
+
     delay(1000);
-    ESP_LOGI("WiFi", "Connecting ...");
   }
   ESP_LOGI("WiFi", "WiFi connected with IP: %s\n", WiFi.localIP().toString().c_str());
+  return true;
 }
 
 void reconnect_mqtt_client(PubSubClient &client, const char *mqtt_broker, const char *client_name, uint16_t mqtt_port)
@@ -94,6 +93,12 @@ bool publish_sensor_data(PubSubClient &client, MQSensorClass &sensor, JsonDocume
 void setup()
 {
   // - WiFi
+  while (!setup_wifi(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASSWORD))
+  {
+    ESP_LOGI("WiFi", "Failed to connect to WiFi, retrying in 5 seconds");
+    delay(5000);
+  }
+
   // - Time (NTP)
   configTime(0, 0, "pool.ntp.org");
 
