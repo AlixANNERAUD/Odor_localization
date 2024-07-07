@@ -9,7 +9,7 @@
 #endif
 
 #ifndef READ_SAMPLE_INTERVAL
-#define READ_SAMPLE_INTERVAL 50
+#define READ_SAMPLE_INTERVAL 20
 #endif
 
 #ifndef READ_SAMPLE_TIMES
@@ -22,7 +22,8 @@ CalibrationCurveClass::CalibrationCurveClass(float x, float y, float slope) : x(
 
 float CalibrationCurveClass::getPercentage(float rs_ro_ratio) const
 {
-    return (pow(10, ((log(rs_ro_ratio) - this->y) / this->slope) + this->x));
+    //return (pow(10, ((log(rs_ro_ratio) - this->y) / this->slope) + this->x));
+    return ((log(rs_ro_ratio) - this->y) / this->slope) + this->x;
 }
 
 MQSensorClass::MQSensorClass(int pin, float R_L, float R0_clean_air_factor) : pin(pin), R_L(R_L), Ro(R0_clean_air_factor)
@@ -43,7 +44,7 @@ void MQSensorClass::initialize()
 
 float MQSensorClass::resistanceCalculation(unsigned int raw_value)
 {
-    return (this->R_L * (1023 - raw_value) / raw_value);
+    return (this->R_L * (4095 - raw_value) / raw_value);
 }
 
 float MQSensorClass::getCalibrationValue(float R0_clean_air_factor)

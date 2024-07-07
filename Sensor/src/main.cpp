@@ -2,15 +2,28 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-#include <LiquidCrystal_I2C.h>
 #include <Wire.h>
 #include "MQSensor.hpp"
+
+#if defined(DEFAULT_LCD_ADDRESS) || defined(DEFAULT_LCD_SDA_PIN) || defined(DEFAULT_LCD_SCL_PIN)
+#if !(defined(DEFAULT_LCD_ADDRESS) && defined(DEFAULT_LCD_SDA_PIN) && defined(DEFAULT_LCD_SCL_PIN))
+#error "You must define all or none of the following: DEFAULT_LCD_ADDRESS, DEFAULT_LCD_SDA_PIN, DEFAULT_LCD_SCL_PIN"
+#else
+#define LCD_ENABLED
+#endif
+#endif
+
+#ifdef LCD_ENABLED
+#include <LiquidCrystal_I2C.h>
+#endif
 
 bool setup_wifi(const char *wifi_ssid, const char *wifi_password)
 {
   ESP_LOGI("WiFi", "Connecting to %s ...", wifi_ssid);
 
   WiFi.begin(wifi_ssid, wifi_password);
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+
 
   while (WiFi.status() != WL_CONNECTED)
   {
@@ -86,6 +99,7 @@ bool publish_sensor_data(PubSubClient &client, MQSensorClass &mq3, MQSensorClass
   return client.publish(topic, buffer.c_str());
 }
 
+#ifdef LCD_ENABLED
 bool setup_lcd(LiquidCrystal_I2C &lcd, unsigned int sda_pin, unsigned int scl_pin)
 {
   if (!Wire.begin(sda_pin, scl_pin))
@@ -96,25 +110,21 @@ bool setup_lcd(LiquidCrystal_I2C &lcd, unsigned int sda_pin, unsigned int scl_pi
 
   return true;
 }
+#endif
 
 MQSensorClass mq136(DEFAULT_MQ135_PIN, 5.0, 9.83);
 MQSensorClass mq3(DEFAULT_MQ3_PIN, 5.0, 9.83);
+
+#ifdef LCD_ENABLED
 LiquidCrystal_I2C lcd(DEFAULT_LCD_ADDRESS, 20, 4);
+#endif
 
 void setup()
 {
-  // - WiFi
-  while (!setup_wifi(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASSWORD))
-  {
-    ESP_LOGI("WiFi", "Failed to connect to WiFi, retrying in 5 seconds");
-    delay(5000);
-  }
-
-  // - Time (NTP)
-  configTime(0, 0, "pool.ntp.org");
-
+#ifdef LCD_ENABLED
   // - Liquid crystal display
   setup_lcd(lcd, DEFAULT_LCD_SDA_PIN, DEFAULT_LCD_SCL_PIN);
+#endif
 
   // - Sensor
   mq3.initialize();
@@ -126,26 +136,37 @@ PubSubClient client(wifi_client);
 JsonDocument document;
 String buffer;
 
-
 void loop()
 {
   document["sensor"] = DEFAULT_CLIENT_NAME;
 
-  if (!client.connected())
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    if (!setup_wifi(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASSWORD))
+    {
+      ESP_LOGI("WiFi", "Failed to connect to WiFi, retrying in 5 seconds");
+      delay(5000);
+    }
+    else
+      configTime(0, 0, "pool.ntp.org");
+  }
+
+  while (!client.connected())
     reconnect_mqtt_client(client, DEFAULT_MQTT_BROKER, DEFAULT_CLIENT_NAME, DEFAULT_MQTT_PORT);
 
+#ifdef LCD_ENABLED
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Sniffer project");
 
-  lcd.setCursor(0,2);
+  lcd.setCursor(0, 2);
   lcd.print("MQ136 ");
   lcd.print(mq136.getGasPercentage(LPG));
 
-  lcd.setCursor(0,3);
+  lcd.setCursor(0, 3);
   lcd.print("MQ3 ");
   lcd.print(mq3.getGasPercentage(LPG));
-  
+#endif
 
   if (publish_sensor_data(client, mq3, mq136, document, buffer, DEFAULT_MQTT_TOPIC, DEFAULT_CLIENT_NAME))
     ESP_LOGV("MQTT",
@@ -154,5 +175,5 @@ void loop()
   else
     ESP_LOGI("MQTT", "Failed to publish sensor data");
 
-  delay(100);
+  delay(DEFAULT_SEND_INTERVAL);
 }
