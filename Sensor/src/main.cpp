@@ -4,26 +4,47 @@
 #include <ArduinoJson.h>
 #include <Wire.h>
 #include "MQSensor.hpp"
+#include <array>
+#include <tuple>
 
-#if defined(DEFAULT_LCD_ADDRESS) || defined(DEFAULT_LCD_SDA_PIN) || defined(DEFAULT_LCD_SCL_PIN)
-#if !(defined(DEFAULT_LCD_ADDRESS) && defined(DEFAULT_LCD_SDA_PIN) && defined(DEFAULT_LCD_SCL_PIN))
-#error "You must define all or none of the following: DEFAULT_LCD_ADDRESS, DEFAULT_LCD_SDA_PIN, DEFAULT_LCD_SCL_PIN"
-#else
-#define LCD_ENABLED
-#endif
-#endif
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
-#ifdef LCD_ENABLED
-#include <LiquidCrystal_I2C.h>
-#endif
+template <size_t N>
+using SensorsType = std::array<std::tuple<const char *, MQSensorClass>, N>;
 
-bool setup_wifi(const char *wifi_ssid, const char *wifi_password)
+template <size_t N>
+using SensorsDataType = std::array<std::tuple<const char *, float, uint64_t>, N>;
+
+void printf_on_display(Adafruit_SSD1306 &display, const char *format, ...)
 {
+  char buffer[512];
+  va_list args;
+  va_start(args, format);
+  vsnprintf(buffer, sizeof(buffer), format, args);
+  va_end(args);
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 0);
+
+  display.println("Sniffer project");
+
+  display.print(buffer);
+
+  display.display();
+}
+
+bool setup_wifi(Adafruit_SSD1306 &display, const char *wifi_ssid, const char *wifi_password)
+{
+  printf_on_display(display, "Connecting to %s ...", wifi_ssid);
+
   ESP_LOGI("WiFi", "Connecting to %s ...", wifi_ssid);
 
   WiFi.begin(wifi_ssid, wifi_password);
   WiFi.setTxPower(WIFI_POWER_8_5dBm);
-
 
   while (WiFi.status() != WL_CONNECTED)
   {
@@ -68,27 +89,15 @@ bool get_unix_timestamp(uint64_t &timestamp)
   return true;
 }
 
-const CalibrationCurveClass LPG(2.3, 0.21, -0.47);
-const CalibrationCurveClass CO(2.3, 0.72, -0.34);
-const CalibrationCurveClass Smoke(2.3, 0.53, -0.44);
-
-bool publish_sensor_data(PubSubClient &client, MQSensorClass &mq3, MQSensorClass &mq136, JsonDocument &document, String &buffer, const char *topic, const char *client_name)
+template <size_t N>
+bool publish_sensor_data(PubSubClient &client, const SensorsDataType<N> &data, JsonDocument &document, String &buffer, const char *topic, const char *client_name)
 {
   // - Sensor acquisition
-  document["data"]["MQ136"] = mq136.getGasPercentage(LPG);
-  document["data"]["MQ3"] = mq3.getGasPercentage(LPG);
-
-  // - Timestamp
-
-  uint64_t timestamp;
-
-  if (!get_unix_timestamp(timestamp))
+  for (const auto &[name, value, timestamp] : data)
   {
-    ESP_LOGE("MQTT", "Failed to get timestamp");
-    return false;
+    document["data"][name]["value"] = value;
+    document["data"][name]["timestamp"] = timestamp;
   }
-
-  document["timestamp"] = timestamp;
 
   // - Serialize JSON
   document.shrinkToFit();
@@ -99,36 +108,68 @@ bool publish_sensor_data(PubSubClient &client, MQSensorClass &mq3, MQSensorClass
   return client.publish(topic, buffer.c_str());
 }
 
-#ifdef LCD_ENABLED
-bool setup_lcd(LiquidCrystal_I2C &lcd, unsigned int sda_pin, unsigned int scl_pin)
+bool setup_display(Adafruit_SSD1306 &display, unsigned int sda_pin, unsigned int scl_pin)
 {
   if (!Wire.begin(sda_pin, scl_pin))
     return false;
 
-  lcd.init();
-  lcd.backlight();
+  if (!display.begin(SSD1306_SWITCHCAPVCC, DEFAULT_LCD_ADDRESS))
+    return false;
 
   return true;
 }
-#endif
 
-MQSensorClass mq136(DEFAULT_MQ135_PIN, 5.0, 9.83);
-MQSensorClass mq3(DEFAULT_MQ3_PIN, 5.0, 9.83);
+SensorsType<2> sensors = {{{"MQ3", MQSensorClass(DEFAULT_MQ135_PIN)},
+                           {"MQ136", MQSensorClass(DEFAULT_MQ3_PIN)}}};
 
-#ifdef LCD_ENABLED
-LiquidCrystal_I2C lcd(DEFAULT_LCD_ADDRESS, 20, 4);
-#endif
+template <size_t N>
+void initialize_sensors(SensorsType<N> &sensors)
+{
+  for (auto &[name, sensor] : sensors)
+  {
+    sensor.initialize();
+  }
+}
+
+template <size_t N>
+bool read_sensors(SensorsType<N> &sensors, SensorsDataType<N> &data)
+{
+
+  for (size_t i = 0; i < N; i++)
+  {
+    // - Sensor acquisition
+    auto &[name, sensor] = sensors[i];
+    float percentage = sensor.getNormalizedValue();
+
+    // - Timestamp
+    uint64_t timestamp;
+    if (!get_unix_timestamp(timestamp))
+    {
+      ESP_LOGE("Time", "Failed to get timestamp");
+      return false;
+    }
+
+    data[i] = {name, percentage, timestamp};
+  }
+
+  return true;
+}
+
+Adafruit_SSD1306 display(DISPLAY_WIDTH, DISPLAY_HEIGHT, &Wire, -1);
 
 void setup()
 {
-#ifdef LCD_ENABLED
+  ESP_LOGI("Display", "Initialize...");
+
   // - Liquid crystal display
-  setup_lcd(lcd, DEFAULT_LCD_SDA_PIN, DEFAULT_LCD_SCL_PIN);
-#endif
+  if (!setup_display(display, DEFAULT_LCD_SDA_PIN, DEFAULT_LCD_SCL_PIN))
+    ESP_LOGE("Display", "Initialisation failed.");
 
   // - Sensor
-  mq3.initialize();
-  mq136.initialize();
+  ESP_LOGI("MQ", "Initialize ...");
+  printf_on_display(display, "Initialize sensors");
+
+  initialize_sensors(sensors);
 }
 
 WiFiClient wifi_client;
@@ -142,9 +183,10 @@ void loop()
 
   while (WiFi.status() != WL_CONNECTED)
   {
-    if (!setup_wifi(DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASSWORD))
+    if (!setup_wifi(display, DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASSWORD))
     {
-      ESP_LOGI("WiFi", "Failed to connect to WiFi, retrying in 5 seconds");
+      printf_on_display(display, "Failed to connect to WiFi, retrying in 5 seconds");
+      ESP_LOGE("WiFi", "Failed to connect to WiFi, retrying in 5 seconds");
       delay(5000);
     }
     else
@@ -154,26 +196,24 @@ void loop()
   while (!client.connected())
     reconnect_mqtt_client(client, DEFAULT_MQTT_BROKER, DEFAULT_CLIENT_NAME, DEFAULT_MQTT_PORT);
 
-#ifdef LCD_ENABLED
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Sniffer project");
+  SensorsDataType<2> data;
 
-  lcd.setCursor(0, 2);
-  lcd.print("MQ136 ");
-  lcd.print(mq136.getGasPercentage(LPG));
+  if (!read_sensors(sensors, data))
+  {
+    ESP_LOGE("MQ", "Failed to read sensor data");
+    return;
+  }
 
-  lcd.setCursor(0, 3);
-  lcd.print("MQ3 ");
-  lcd.print(mq3.getGasPercentage(LPG));
-#endif
+  printf_on_display(display, "MQ3: %.2f\nMQ136: %.2f", std::get<1>(data[0]), std::get<1>(data[1]));
 
-  if (publish_sensor_data(client, mq3, mq136, document, buffer, DEFAULT_MQTT_TOPIC, DEFAULT_CLIENT_NAME))
-    ESP_LOGV("MQTT",
-             "Published sensor data: %d\n",
-             sensorValue);
+  if (publish_sensor_data(client, data, document, buffer, DEFAULT_MQTT_TOPIC, DEFAULT_CLIENT_NAME))
+  {
+    for (const auto &[name, value, timestamp] : data)
+      ESP_LOGV("MQTT", "Sensor: %s, Value: %.2f, Timestamp: %llu", name, value, timestamp);
+  }
+
   else
-    ESP_LOGI("MQTT", "Failed to publish sensor data");
+    ESP_LOGE("MQTT", "Failed to publish sensor data");
 
   delay(DEFAULT_SEND_INTERVAL);
 }
