@@ -1,11 +1,11 @@
 #include "MQSensor.hpp"
 
-#ifndef CALIBRATION_SAMPLE_TIMES
-#define CALIBRATION_SAMPLE_TIMES 50
+#ifndef CALIBRATION_SAMPLE_COUNT
+#define CALIBRATION_SAMPLE_COUNT 50
 #endif
 
 #ifndef CALIBRATION_SAMPLE_INTERVAL
-#define CALIBRATION_SAMPLE_INTERVAL 20
+#define CALIBRATION_SAMPLE_INTERVAL 100
 #endif
 
 #ifndef READ_SAMPLE_INTERVAL
@@ -49,7 +49,7 @@ float MQSensorClass::resistanceCalculation(unsigned int raw_value)
 
 float MQSensorClass::getCalibrationValue(float R0_clean_air_factor)
 {
-    return this->read(CALIBRATION_SAMPLE_TIMES, CALIBRATION_SAMPLE_INTERVAL) / R0_clean_air_factor;
+    return this->read(CALIBRATION_SAMPLE_COUNT, CALIBRATION_SAMPLE_INTERVAL) / R0_clean_air_factor;
 }
 
 float MQSensorClass::read(unsigned int samples_count, unsigned int sample_interval)
@@ -63,7 +63,7 @@ float MQSensorClass::read(unsigned int samples_count, unsigned int sample_interv
     return samples / samples_count;
 }
 
-unsigned int MQSensorClass::rawValue()
+unsigned int MQSensorClass::getRawValue()
 {
     return analogRead(pin);
 }

@@ -21,7 +21,7 @@ public:
     void initialize();
 
     float getGasPercentage(const CalibrationCurveClass &calibration_curve);
-    unsigned int rawValue();
+    unsigned int getRawValue();
 
 private:
     int pin;

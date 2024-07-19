@@ -28,7 +28,7 @@ bool setup_lcd(Adafruit_SSD1306 &display, unsigned int sda_pin, unsigned int scl
 
   if (!display.begin(SSD1306_SWITCHCAPVCC, DEFAULT_LCD_ADDRESS))
     return false;
-    
+
   return true;
 }
 #endif
@@ -48,8 +48,8 @@ float radians_to_degrees(float radians)
   return radians * 180 / PI;
 }
 
-MQSensorClass mq3_2(DEFAULT_MQ3_2_PIN, 5.0, 9.83);
 MQSensorClass mq3_1(DEFAULT_MQ3_1_PIN, 5.0, 9.83);
+MQSensorClass mq3_2(DEFAULT_MQ3_2_PIN, 5.0, 9.83);
 CumulatedMeanStdClass cumulated_mean_mq3_1;
 CumulatedMeanStdClass cumulated_mean_mq3_2;
 CumulatedMeanStdClass cumulated_mean_common;
