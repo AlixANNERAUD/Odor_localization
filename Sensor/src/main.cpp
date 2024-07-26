@@ -183,6 +183,7 @@ void loop()
 
   while (WiFi.status() != WL_CONNECTED)
   {
+    printf_on_display(display, "Connecting to WiFi ...");
     if (!setup_wifi(display, DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASSWORD))
     {
       printf_on_display(display, "Failed to connect to WiFi, retrying in 5 seconds");

@@ -31,7 +31,7 @@ void MQSensorClass::initialize()
 
 float MQSensorClass::getCalibrationValue()
 {
-    return this->read(CALIBRATION_SAMPLE_COUNT, CALIBRATION_SAMPLE_INTERVAL);
+    return this->read(CALIBRATION_SAMPLE_COUNT, CALIBRATION_SAMPLE_INTERVAL) / ADC_STEPS;
 }
 
 float MQSensorClass::read(unsigned int samples_count, unsigned int sample_interval)
@@ -39,7 +39,7 @@ float MQSensorClass::read(unsigned int samples_count, unsigned int sample_interv
     float samples = 0;
     for (int i = 0; i < samples_count; i++)
     {
-        samples += this->getNormalizedValue();
+        samples += this->getRawValue();
         delay(sample_interval);
     }
     return samples / samples_count;
@@ -47,7 +47,7 @@ float MQSensorClass::read(unsigned int samples_count, unsigned int sample_interv
 
 float MQSensorClass::getNormalizedValue()
 {
-    return this->read(READ_SAMPLE_INTERVAL, READ_SAMPLE_INTERVAL);
+    return this->read(READ_SAMPLE_INTERVAL, READ_SAMPLE_INTERVAL) / ADC_STEPS;
 }
 
 unsigned int MQSensorClass::getRawValue()
