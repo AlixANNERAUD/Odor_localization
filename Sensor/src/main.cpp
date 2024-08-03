@@ -6,16 +6,12 @@
 #include "MQSensor.hpp"
 #include <array>
 #include <tuple>
+#include "Sensors.hpp"
+
 
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-
-template <size_t N>
-using SensorsType = std::array<std::tuple<const char *, MQSensorClass>, N>;
-
-template <size_t N>
-using SensorsDataType = std::array<std::tuple<const char *, float, uint64_t>, N>;
 
 void printf_on_display(Adafruit_SSD1306 &display, const char *format, ...)
 {
@@ -119,41 +115,11 @@ bool setup_display(Adafruit_SSD1306 &display, unsigned int sda_pin, unsigned int
   return true;
 }
 
-SensorsType<2> sensors = {{{"MQ3", MQSensorClass(DEFAULT_MQ135_PIN)},
-                           {"MQ136", MQSensorClass(DEFAULT_MQ3_PIN)}}};
+SensorsType<2> sensors = {{{"MQ3", MQSensorClass(DEFAULT_MQ135_PIN), 0},
+                           {"MQ136", MQSensorClass(DEFAULT_MQ3_PIN), 0}}};
 
-template <size_t N>
-void initialize_sensors(SensorsType<N> &sensors)
-{
-  for (auto &[name, sensor] : sensors)
-  {
-    sensor.initialize();
-  }
-}
 
-template <size_t N>
-bool read_sensors(SensorsType<N> &sensors, SensorsDataType<N> &data)
-{
 
-  for (size_t i = 0; i < N; i++)
-  {
-    // - Sensor acquisition
-    auto &[name, sensor] = sensors[i];
-    float percentage = sensor.getNormalizedValue();
-
-    // - Timestamp
-    uint64_t timestamp;
-    if (!get_unix_timestamp(timestamp))
-    {
-      ESP_LOGE("Time", "Failed to get timestamp");
-      return false;
-    }
-
-    data[i] = {name, percentage, timestamp};
-  }
-
-  return true;
-}
 
 Adafruit_SSD1306 display(DISPLAY_WIDTH, DISPLAY_HEIGHT, &Wire, -1);
 
@@ -199,7 +165,7 @@ void loop()
 
   SensorsDataType<2> data;
 
-  if (!read_sensors(sensors, data))
+  if (!read_sensors(sensors, data, get_unix_timestamp))
   {
     ESP_LOGE("MQ", "Failed to read sensor data");
     return;
