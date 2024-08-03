@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "MQSensor.hpp"
-#include "CumulatedMean.hpp"
+#include "StandardScaler.hpp"
+#include "Sensors.hpp"
 
 #if defined(DEFAULT_LCD_ADDRESS) || defined(DEFAULT_LCD_SDA_PIN) || defined(DEFAULT_LCD_SCL_PIN)
 #if !(defined(DEFAULT_LCD_ADDRESS) && defined(DEFAULT_LCD_SDA_PIN) && defined(DEFAULT_LCD_SCL_PIN))
@@ -16,11 +17,8 @@
 #include <Adafruit_SSD1306.h>
 #endif
 
-const CalibrationCurveClass LPG(2.3, 0.21, -0.47);
-const CalibrationCurveClass CO(2.3, 0.72, -0.34);
-const CalibrationCurveClass Smoke(2.3, 0.53, -0.44);
-
 #ifdef LCD_ENABLED
+
 bool setup_lcd(Adafruit_SSD1306 &display, unsigned int sda_pin, unsigned int scl_pin)
 {
   if (!Wire.begin(sda_pin, scl_pin))
@@ -33,26 +31,31 @@ bool setup_lcd(Adafruit_SSD1306 &display, unsigned int sda_pin, unsigned int scl
 }
 #endif
 
-float get_gaz_direction(float sensor_1, float sensor_2, float sensor_distance)
+template <size_t N>
+float get_gaz_direction(const SensorsDataType<N> &data)
 {
-  float difference = sensor_1 - sensor_2;
+  float gradient_position_sum = 0;
+  float gradient_sum = 0;
 
-  if (difference == 0)
-    return 90;
+  for (const auto &[name, position, value] : data)
+  {
+    gradient_position_sum += position * value;
+    gradient_sum += value;
+  }
 
-  return atan(difference / sensor_distance);
+  return gradient_position_sum / gradient_sum;
 }
 
-float radians_to_degrees(float radians)
-{
-  return radians * 180 / PI;
-}
+SensorsType<2> sensors = {{{"MQ3 L", MQSensorClass(DEFAULT_MQ3_1_PIN), 1},
+                           {
+                               "MQ3 R",
+                               MQSensorClass(DEFAULT_MQ3_2_PIN),
+                               -1,
+                           }}};
 
-MQSensorClass mq3_1(DEFAULT_MQ3_1_PIN, 5.0, 9.83);
-MQSensorClass mq3_2(DEFAULT_MQ3_2_PIN, 5.0, 9.83);
-CumulatedMeanStdClass cumulated_mean_mq3_1;
-CumulatedMeanStdClass cumulated_mean_mq3_2;
-CumulatedMeanStdClass cumulated_mean_common;
+std::array<StandardScalerClass<float>, 2> scalers;
+
+StandardScalerClass<float> global_scaler;
 
 #ifdef LCD_ENABLED
 Adafruit_SSD1306 display(DISPLAY_WIDTH, DISPLAY_HEIGHT, &Wire, -1);
@@ -60,7 +63,7 @@ Adafruit_SSD1306 display(DISPLAY_WIDTH, DISPLAY_HEIGHT, &Wire, -1);
 
 void setup()
 {
-  ESP_LOGI("LCD", "Starting setup");
+  ESP_LOGI("LCD", "Starting !setup");
 
 #ifdef LCD_ENABLED
   // - Liquid crystal display
@@ -70,55 +73,34 @@ void setup()
 
   ESP_LOGI("MQ3", "Starting setup");
   // - Sensor
-  mq3_1.initialize();
-  mq3_2.initialize();
+  initialize_sensors(sensors);
 }
-
-float mq3_1_values[] = {0.0, 0.0};
-float mq3_2_values[] = {0.0, 0.0};
-float direction_values[] = {0.0, 0.0};
 
 void loop()
 {
-#ifdef LCD_ENABLED
+  SensorsDataType<2> sensors_data;
 
-  mq3_1_values[0] = mq3_1_values[1];
-  mq3_2_values[0] = mq3_2_values[1];
+  auto time_lambda = [](uint64_t &timestamp) -> bool
+  {
+    timestamp = 0; // Just don't care about the timestamp
+    return true;
+  };
 
-  mq3_1_values[1] = mq3_1.getGasPercentage(LPG);
-  mq3_2_values[1] = mq3_2.getGasPercentage(LPG);
+  if (!read_sensors(sensors, sensors_data, time_lambda))
+  {
+    ESP_LOGE("MQ3", "Failed to read sensors");
+    return;
+  }
 
-  cumulated_mean_mq3_1.addValue(mq3_1_values[1]);
-  cumulated_mean_mq3_2.addValue(mq3_2_values[1]);
-  cumulated_mean_common.addValue((mq3_1_values[1] + mq3_2_values[1]) / 2);
+  auto raw_values = get_values(sensors_data);
 
-  auto centered_mq3_1 = cumulated_mean_common.centerValue(mq3_1_values[1]);
-  auto centered_mq3_2 = cumulated_mean_common.centerValue(mq3_2_values[1]);
+  auto normalized_values = fit_transform(scalers, raw_values);
+  auto centered_values = fit_transform(scalers, raw_values, true);
 
-  auto normalized_mq3_1 = cumulated_mean_common.normalizeValue(mq3_1_values[1]);
-  auto normalized_mq3_2 = cumulated_mean_common.normalizeValue(mq3_2_values[1]);
+  for (auto value : raw_values)
+    global_scaler.fit(value);
 
-  auto direction_raw = get_gaz_direction(mq3_1_values[1], mq3_2_values[1], SENSOR_DISTANCE);
-  auto direction_centered = get_gaz_direction(centered_mq3_1, centered_mq3_2, SENSOR_DISTANCE);
-  auto direction_normalized = get_gaz_direction(normalized_mq3_1, normalized_mq3_2, SENSOR_DISTANCE);
-
-  float growth_rates[] = {mq3_1_values[1] - mq3_1_values[0], mq3_2_values[1] - mq3_2_values[0]};
-
-  direction_values[0] = direction_values[1];
-
-  direction_values[1] = direction_centered;
-
-  ESP_LOGI("MQ3", "MQ3 1: %f, MQ3 2: %f, Direction: %f", mq3_1_values[1], mq3_2_values[1], radians_to_degrees(direction_raw));
-
-  ESP_LOGI("MQ3", "C MQ3 1: %f, C MQ3 2: %f,C  Direction: %f", centered_mq3_1, centered_mq3_2, radians_to_degrees(direction_centered));
-
-  ESP_LOGI("MQ3", "N MQ3 1: %f, N MQ3 2: %f,N  Direction: %f", normalized_mq3_1, normalized_mq3_2, radians_to_degrees(direction_normalized));
-
-  ESP_LOGI("MQ3", "G MQ3 1: %f, G MQ3 2: %f, Diff : %f", growth_rates[0], growth_rates[1], growth_rates[0] - growth_rates[1]);
-
-  ESP_LOGI("MQ3", "Direction growth : %f", radians_to_degrees(direction_centered - direction_values[0]));
-
-  ESP_LOGI("MQ3", "-------------------");
+  auto direction = get_gaz_direction(sensors_data);
 
   display.clearDisplay();
   display.setTextSize(1);
@@ -127,17 +109,16 @@ void loop()
 
   display.println("Sniffer project");
 
-  display.print("MQ3 : ");
-  display.print(mq3_1_values[1]);
-  display.print(" - ");
-  display.println(mq3_2_values[1]);
+  for (size_t i = 0; i < 2; i++)
+  {
+
+    display.print(std::get<0>(sensors[i]));
+    display.print(" : ");
+    display.println(raw_values[i]);
+  }
 
   display.print("Direction : ");
-  display.println(radians_to_degrees(direction_values[1]));
-
-  display.print("Growth rate : ");
-  display.println(radians_to_degrees(direction_values[1]) - radians_to_degrees(direction_values[0]));
+  display.println(direction);
 
   display.display();
-#endif
 }
