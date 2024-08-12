@@ -1,0 +1,15 @@
+services:
+  tensorflow:
+    image: tensorflow/tensorflow:latest-gpu-jupyter-custom
+    hostname: tensorflow
+    container_name: tensorflow
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
