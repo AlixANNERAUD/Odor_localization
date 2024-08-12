@@ -5,3 +5,4 @@
 .vscode/ipch
 *.pkl
 *.h5
+*.keras
