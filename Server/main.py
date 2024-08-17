@@ -1,11 +1,12 @@
 import paho.mqtt.client as mqtt
 import time
-from sensor import SensorClass
+from sensor import SensorClass, MinimumMaximumScaler
 import numpy
 import scipy 
 import json
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import logging
 
 MQTT_BROKER = "alixloicrpi.local"
 MQTT_PORT = 1883
@@ -52,8 +53,10 @@ def on_message(client, userdata, msg):
             continue
 
         # Try to update the sensor with the new data
-        if not(sensors[identifier].update(key, value, timestamp)):
-            print(f"Failed to update sensor {identifier} with data {data}")
+        try:
+            sensors[identifier].update(key, value, timestamp)
+        except ValueError:
+            logging.error(f"Failed to update sensor {identifier} with data {data}")
 
 def get_sensors_position():
     positions = numpy.zeros((len(sensors), 2))
@@ -69,10 +72,8 @@ def get_sensors_value(gaz_sensor_type):
 
     for i, (_, sensor) in enumerate(sensors.items()):
         sensor_values = sensor.get_latest_values(gaz_sensor_type)
-        if sensor_values is None:
-            return None
-        values[i] = sensor_values[1]
-    
+        values[i] = sensor_values["value"]
+
     return values
 
 def locate_delaunay(sensors_position, sensors_value):
@@ -114,10 +115,10 @@ def locate_optimize(sensors_position, sensors_value):
 
 def localize_source(axes, map_size):
     sensors_position = get_sensors_position()
-    sensors_value = get_sensors_value("MQ3")
-
-    if sensors_value is None:
-        print("Not enough sensors values")
+    try:
+        sensors_value = get_sensors_value("MQ3")
+    except ValueError:
+        logging.info("No values for MQ3")
         return
 
     if sensors_value.shape[0] < 3:
@@ -152,14 +153,18 @@ def get_map_size():
 
     return (x.min(), x.max(), y.min(), y.max())
 
-
 sensors = {
-    "Sensor_1": SensorClass(0, 0),
-    "Sensor_2": SensorClass(0, 1),
-    "Sensor_3": SensorClass(1, 1),
+    "Sensor_1": SensorClass(0, 0).add_gaz_sensors_type("MQ3", 0, 1)
+                                .add_gaz_sensors_type("MQ136", 0, 1),
+    "Sensor_2": SensorClass(0, 1).add_gaz_sensors_type("MQ3", 0, 1)
+                                .add_gaz_sensors_type("MQ136", 0, 1),
+    "Sensor_3": SensorClass(1, 1).add_gaz_sensors_type("MQ3", 0, 1)
+                                .add_gaz_sensors_type("MQ136", 0, 1),
 }
 
 start = None
+
+calibration_mode = False
 
 def plot_sensor_values(axes, gaz_sensor_type, center):
     axes.clear()
@@ -172,11 +177,12 @@ def plot_sensor_values(axes, gaz_sensor_type, center):
     for name, sensor in sensors.items():
         label = f"{name} {sensor.get_position()}"
 
-        values = sensor.get_all_values(gaz_sensor_type, center=center)
-
-        if values is not None:
-            axes.plot((values[0]/1000), values[1], label=label)
+        try:
+            data = sensor.get_all_values(gaz_sensors_type=gaz_sensor_type, scale=True)
+            axes.plot(data["time"]/1000, data["value"], label=label)
             any_plot = True
+        except ValueError:
+            continue
 
     if any_plot:
         axes.legend()
@@ -207,13 +213,17 @@ def plot_growth(axes, gaz_sensor_type):
     any_plot = False
 
     for name, sensor in sensors.items():
-        label = f"{name} {sensor.get_position()}"
 
-        growth = sensor.get_growth_rate(gaz_sensor_type)
-
-        if growth is not None:
-            axes.plot((growth[0]/1000), numpy.absolute(growth[1]), label=label)
+        try:
+            growth = sensor.get_gradient(gaz_sensor_type)
+            
+            label = f"{name} {sensor.get_position()}"
+            
+            axes.plot(growth["time"]/1000, numpy.absolute(growth["value"]), label=label)
             any_plot = True
+
+        except (ValueError, KeyError, IndexError):
+            continue
 
     if any_plot:
         axes.legend()
@@ -221,6 +231,30 @@ def plot_growth(axes, gaz_sensor_type):
 
         plt.pause(0.1)
 
+def check_calibration(sensors):
+    
+    if not(calibration_mode):
+        return
+
+    if start is None:
+        return
+
+    if time.time() - start > 60:
+        return
+        
+    print("Calibration results:")
+    
+    for name, sensor in sensors.items():
+        try:
+            results[name] = {}
+
+            print(f"\t{name}")
+
+            for sensor_type, data in sensor.get_all_values().items():
+                print(f"\t\t{sensor_type} : mean={data['value'].mean()}, std={data['value'].std()}")
+
+        except ValueError:
+            logging.error(f"Failed to get calibration data for sensor {name}")
 
 
 def main():
@@ -234,6 +268,8 @@ def main():
         print("Failed to connect to MQTT Broker : ", e)
         return
 
+    if calibration_mode:
+        logging.info("Calibration mode enabled, please wait for 60 seconds to get calibration data")
 
     try:
         client.loop_start() 
