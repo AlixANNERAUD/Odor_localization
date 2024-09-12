@@ -17,6 +17,7 @@ using SensorsDataType = std::array<std::tuple<const char *, float, uint64_t>, N>
 
 // - Functions
 
+
 /// @brief Initialize sensors
 /// @tparam N Number of sensors
 /// @param sensors Sensor data
@@ -25,6 +26,16 @@ inline void initialize_sensors(SensorsType<N> &sensors)
 {
     for (auto &[name, sensor, position] : sensors)
         sensor.initialize();
+}
+
+/// @brief Loop sensors
+/// @tparam N Number of sensors
+/// @param sensors Sensor data
+template <size_t N>
+inline void loop_sensors(SensorsType<N> &sensors)
+{
+    for (auto &[name, sensor, position] : sensors)
+        sensor.loop();
 }
 
 /// @brief Read sensors data
@@ -41,7 +52,8 @@ inline bool read_sensors(SensorsType<N> &sensors, SensorsDataType<N> &data, std:
     {
         // - Sensor acquisition
         auto &[name, sensor, position] = sensors[i];
-        float percentage = sensor.getNormalizedValue();
+        auto scaler = sensor.getScaler();
+        auto average = scaler.getAverage();
 
         // - Timestamp
         uint64_t timestamp;
@@ -51,7 +63,7 @@ inline bool read_sensors(SensorsType<N> &sensors, SensorsDataType<N> &data, std:
             return false;
         }
 
-        data[i] = {name, percentage, timestamp};
+        data[i] = {name, average, timestamp};
     }
 
     return true;

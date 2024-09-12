@@ -1,37 +1,16 @@
 #include "MQSensor.hpp"
 
-#ifndef CALIBRATION_SAMPLE_COUNT
-#define CALIBRATION_SAMPLE_COUNT 50
-#endif
-
-#ifndef CALIBRATION_SAMPLE_INTERVAL
-#define CALIBRATION_SAMPLE_INTERVAL 100
-#endif
-
-#ifndef READ_SAMPLE_INTERVAL
-#define READ_SAMPLE_INTERVAL 20
-#endif
-
-#ifndef READ_SAMPLE_TIMES
-#define READ_SAMPLE_TIMES 5
-#endif
-
 #ifndef ADC_STEPS
 #define ADC_STEPS 4096.0
 #endif
 
-MQSensorClass::MQSensorClass(int pin) : pin(pin)
-{
-}
+MQSensorClass::MQSensorClass(int pin, unsigned int read_sample_interval)
+    : read_sample_interval(read_sample_interval), pin(pin)
+{}
 
 void MQSensorClass::initialize()
 {
-    this->calibration_value = this->getCalibrationValue();
-}
-
-float MQSensorClass::getCalibrationValue()
-{
-    return this->read(CALIBRATION_SAMPLE_COUNT, CALIBRATION_SAMPLE_INTERVAL) / ADC_STEPS;
+    pinMode(pin, INPUT);
 }
 
 float MQSensorClass::read(unsigned int samples_count, unsigned int sample_interval)
@@ -53,4 +32,24 @@ float MQSensorClass::getNormalizedValue()
 unsigned int MQSensorClass::getRawValue()
 {
     return analogRead(pin);
+}
+
+StandardScalerClass<float> MQSensorClass::getScaler()
+{
+    auto previous_scaler = this->scaler;
+
+    this->scaler = StandardScalerClass<float>(); // Reset the scaler
+
+    return previous_scaler;
+}
+
+void MQSensorClass::loop()
+{
+    // If the next read is due
+    if (next_read < millis())
+    {
+        scaler.fit(this->getRawValue() / ADC_STEPS);
+
+        next_read = millis() + this->read_sample_interval;
+    }
 }
