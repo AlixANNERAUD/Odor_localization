@@ -8,7 +8,6 @@
 #include <tuple>
 #include "Sensors.hpp"
 
-
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -115,11 +114,10 @@ bool setup_display(Adafruit_SSD1306 &display, unsigned int sda_pin, unsigned int
   return true;
 }
 
-SensorsType<2> sensors = {{{"MQ3", MQSensorClass(DEFAULT_MQ135_PIN), 0},
-                           {"MQ136", MQSensorClass(DEFAULT_MQ3_PIN), 0}}};
-
-
-
+SensorsType<2> sensors = {{{"MQ3", MQSensorClass(DEFAULT_MQ3_PIN, READ_SAMPLE_INTERVAL),
+                            0},
+                           {"MQ136", MQSensorClass(DEFAULT_MQ135_PIN, READ_SAMPLE_INTERVAL),
+                            0}}};
 
 Adafruit_SSD1306 display(DISPLAY_WIDTH, DISPLAY_HEIGHT, &Wire, -1);
 
@@ -133,54 +131,85 @@ void setup()
 
   // - Sensor
   ESP_LOGI("MQ", "Initialize ...");
-  printf_on_display(display, "Initialize sensors");
-
   initialize_sensors(sensors);
+  printf_on_display(display, "Initialize sensors");
 }
 
 WiFiClient wifi_client;
 PubSubClient client(wifi_client);
 JsonDocument document;
 String buffer;
+unsigned int next_publish = 0;
 
 void loop()
 {
   document["sensor"] = DEFAULT_CLIENT_NAME;
 
-  while (WiFi.status() != WL_CONNECTED)
+  if (next_publish < millis())
   {
-    printf_on_display(display, "Connecting to WiFi ...");
-    if (!setup_wifi(display, DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASSWORD))
+    ESP_LOGD("MQTT", "Publishing sensor data with a lag of %d ms", millis() - next_publish);
+
+    if (next_publish == 0)
     {
-      printf_on_display(display, "Failed to connect to WiFi, retrying in 5 seconds");
-      ESP_LOGE("WiFi", "Failed to connect to WiFi, retrying in 5 seconds");
-      delay(5000);
+      next_publish = millis() + DEFAULT_PUBLISH_INTERVAL;
+      return;
+    }
+
+    // - Check if the wifi is connected
+    while (WiFi.status() != WL_CONNECTED)
+    {
+      printf_on_display(display, "Connecting to WiFi ...");
+      if (!setup_wifi(display, DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASSWORD))
+      {
+        printf_on_display(display, "Failed to connect to WiFi, retrying in 5 seconds");
+        ESP_LOGE("WiFi", "Failed to connect to WiFi, retrying in 5 seconds");
+        delay(5000);
+      }
+      else
+        // - Set the time via NTP
+        configTime(0, 0, "pool.ntp.org");
+    }
+
+    ESP_LOGD("MQTT", "Publishing sensor data with a lag of %d ms", millis() - next_publish);
+
+
+    // - Check if the client is connected
+    while (!client.connected())
+      reconnect_mqtt_client(client, DEFAULT_MQTT_BROKER, DEFAULT_CLIENT_NAME, DEFAULT_MQTT_PORT);
+
+    ESP_LOGD("MQTT", "Co sensor data with a lag of %d ms", millis() - next_publish);
+
+
+    // - Collect sensor data
+    SensorsDataType<2> data;
+
+    // - Read sensor data
+    if (!read_sensors(sensors, data, get_unix_timestamp))
+    {
+      ESP_LOGE("MQ", "Failed to read sensor data");
+      return;
+    }
+
+     ESP_LOGD("MQTT", "Reading sensor data with a lag of %d ms", millis() - next_publish);
+
+
+    // - Print sensor data
+    printf_on_display(display, "MQ3: %.6f\nMQ136: %.6f", std::get<1>(data[0]), std::get<1>(data[1]));
+
+    // - Publish sensor data
+    if (publish_sensor_data(client, data, document, buffer, DEFAULT_MQTT_TOPIC, DEFAULT_CLIENT_NAME))
+    {
+      for (const auto &[name, value, timestamp] : data)
+        ESP_LOGV("MQTT", "Sensor: %s, Value: %.2f, Timestamp: %llu", name, value, timestamp);
     }
     else
-      configTime(0, 0, "pool.ntp.org");
+      ESP_LOGE("MQTT", "Failed to publish sensor data");
+
+    next_publish = millis() + DEFAULT_PUBLISH_INTERVAL;
   }
 
-  while (!client.connected())
-    reconnect_mqtt_client(client, DEFAULT_MQTT_BROKER, DEFAULT_CLIENT_NAME, DEFAULT_MQTT_PORT);
+  // - Loop sensors (collect data)
+  loop_sensors(sensors);
 
-  SensorsDataType<2> data;
-
-  if (!read_sensors(sensors, data, get_unix_timestamp))
-  {
-    ESP_LOGE("MQ", "Failed to read sensor data");
-    return;
-  }
-
-  printf_on_display(display, "MQ3: %.2f\nMQ136: %.2f", std::get<1>(data[0]), std::get<1>(data[1]));
-
-  if (publish_sensor_data(client, data, document, buffer, DEFAULT_MQTT_TOPIC, DEFAULT_CLIENT_NAME))
-  {
-    for (const auto &[name, value, timestamp] : data)
-      ESP_LOGV("MQTT", "Sensor: %s, Value: %.2f, Timestamp: %llu", name, value, timestamp);
-  }
-
-  else
-    ESP_LOGE("MQTT", "Failed to publish sensor data");
-
-  delay(DEFAULT_SEND_INTERVAL);
+  delay(5); // Let the CPU breathe alcohol
 }
