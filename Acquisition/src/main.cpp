@@ -108,15 +108,15 @@ bool setup_display(Adafruit_SSD1306 &display, unsigned int sda_pin, unsigned int
   if (!Wire.begin(sda_pin, scl_pin))
     return false;
 
-  if (!display.begin(SSD1306_SWITCHCAPVCC, DEFAULT_LCD_ADDRESS))
+  if (!display.begin(SSD1306_SWITCHCAPVCC, LCD_ADDRESS))
     return false;
 
   return true;
 }
 
-SensorsType<2> sensors = {{{"MQ3", MQSensorClass(DEFAULT_MQ3_PIN, READ_SAMPLE_INTERVAL),
+SensorsType<2> sensors = {{{"MQ3", MQSensorClass(MQ3_PIN, READ_SAMPLE_INTERVAL),
                             0},
-                           {"MQ136", MQSensorClass(DEFAULT_MQ135_PIN, READ_SAMPLE_INTERVAL),
+                           {"MQ136", MQSensorClass(MQ135_PIN, READ_SAMPLE_INTERVAL),
                             0}}};
 
 Adafruit_SSD1306 display(DISPLAY_WIDTH, DISPLAY_HEIGHT, &Wire, -1);
@@ -126,7 +126,7 @@ void setup()
   ESP_LOGI("Display", "Initialize...");
 
   // - Liquid crystal display
-  if (!setup_display(display, DEFAULT_LCD_SDA_PIN, DEFAULT_LCD_SCL_PIN))
+  if (!setup_display(display, LCD_SDA_PIN, LCD_SCL_PIN))
     ESP_LOGE("Display", "Initialisation failed.");
 
   // - Sensor
@@ -143,7 +143,7 @@ unsigned int next_publish = 0;
 
 void loop()
 {
-  document["sensor"] = DEFAULT_CLIENT_NAME;
+  document["sensor"] = CLIENT_NAME;
 
   if (next_publish < millis())
   {
@@ -151,7 +151,7 @@ void loop()
 
     if (next_publish == 0)
     {
-      next_publish = millis() + DEFAULT_PUBLISH_INTERVAL;
+      next_publish = millis() + PUBLISH_INTERVAL;
       return;
     }
 
@@ -159,7 +159,7 @@ void loop()
     while (WiFi.status() != WL_CONNECTED)
     {
       printf_on_display(display, "Connecting to WiFi ...");
-      if (!setup_wifi(display, DEFAULT_WIFI_SSID, DEFAULT_WIFI_PASSWORD))
+      if (!setup_wifi(display, WIFI_SSID, WIFI_PASSWORD))
       {
         printf_on_display(display, "Failed to connect to WiFi, retrying in 5 seconds");
         ESP_LOGE("WiFi", "Failed to connect to WiFi, retrying in 5 seconds");
@@ -175,7 +175,7 @@ void loop()
 
     // - Check if the client is connected
     while (!client.connected())
-      reconnect_mqtt_client(client, DEFAULT_MQTT_BROKER, DEFAULT_CLIENT_NAME, DEFAULT_MQTT_PORT);
+      reconnect_mqtt_client(client, MQTT_BROKER, CLIENT_NAME, MQTT_PORT);
 
     ESP_LOGD("MQTT", "Co sensor data with a lag of %d ms", millis() - next_publish);
 
@@ -197,7 +197,7 @@ void loop()
     printf_on_display(display, "MQ3: %.6f\nMQ136: %.6f", std::get<1>(data[0]), std::get<1>(data[1]));
 
     // - Publish sensor data
-    if (publish_sensor_data(client, data, document, buffer, DEFAULT_MQTT_TOPIC, DEFAULT_CLIENT_NAME))
+    if (publish_sensor_data(client, data, document, buffer, MQTT_TOPIC, CLIENT_NAME))
     {
       for (const auto &[name, value, timestamp] : data)
         ESP_LOGV("MQTT", "Sensor: %s, Value: %.2f, Timestamp: %llu", name, value, timestamp);
@@ -205,7 +205,7 @@ void loop()
     else
       ESP_LOGE("MQTT", "Failed to publish sensor data");
 
-    next_publish = millis() + DEFAULT_PUBLISH_INTERVAL;
+    next_publish = millis() + PUBLISH_INTERVAL;
   }
 
   // - Loop sensors (collect data)
