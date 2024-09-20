@@ -136,6 +136,7 @@ def plot_source_position(axes, sensors, source_position):
     axes.set_xlabel("X")
     axes.set_ylabel("Y")
     axes.set_aspect("equal", adjustable="box")
+    axes.grid(True)
 
     # - Plot the source and the sensors positions   
     if source_position is not None:
